@@ -20,31 +20,6 @@ import {
   GitLabIntegrationConfig,
 } from './config';
 
-// Cache for branch lists to avoid repeated API calls
-const branchCache = new Map();
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes in milliseconds
-
-interface GitLabBranch {
-  name: string;
-  commit: {
-    id: string;
-    short_id: string;
-    title: string;
-    created_at: string;
-    parent_ids: string[];
-    message: string;
-    authored_date: string;
-    author_name: string;
-    author_email: string;
-    committed_date: string;
-    committer_name: string;
-    committer_email: string;
-  };
-  protected: boolean;
-  developers_can_push: boolean;
-  developers_can_merge: boolean;
-}
-
 /**
  * Given a URL pointing to a file on a provider, returns a URL that is suitable
  * for fetching the contents of the data.
@@ -57,6 +32,9 @@ interface GitLabBranch {
  * -or-
  * from: https://gitlab.com/groupA/teams/teamA/subgroupA/repoA/-/blob/branch/filepath
  * to:   https://gitlab.com/api/v4/projects/projectId/repository/files/filepath?ref=branch
+ *  * -or-
+ * from: https://gitlab.com/groupA/teams/teamA/subgroupA/repoA/-/blob/feature/branch/filepath
+ * to:   https://gitlab.com/api/v4/projects/projectId/repository/files/filepath?ref=feature/branch
  *
  * @param url - A URL pointing to a file
  * @param config - The relevant provider config
@@ -67,8 +45,7 @@ export async function getGitLabFileFetchUrl(
   config: GitLabIntegrationConfig,
 ): Promise<string> {
   const projectID = await getProjectId(url, config);
-  const fetchUrl = (await buildProjectUrl(url, projectID, config)).toString();
-  return fetchUrl;
+  return (await buildProjectUrl(url, projectID, config)).toString();
 }
 
 /**
@@ -107,16 +84,32 @@ export async function buildProjectUrl(
 ): Promise<URL> {
   try {
     const url = new URL(target);
-    const relativePath = getGitLabIntegrationRelativePath(config);
 
-    // Use resolveGitLabPath to get the correct branch and file path
-    const resolvedUrl = await resolveGitLabPath(url, {
-      projectID: Number(projectID),
+    // const branchAndFilePath = url.pathname
+    //   .split('/blob/')
+    //   .slice(1)
+    //   .join('/blob/');
+
+    const relativePath = getGitLabIntegrationRelativePath(config);
+    const branchAndFilePath = await resolveGitLabPath(url, {
+      projectID: +projectID,
       relativePath,
       token: config.token,
-    });
+    })
+    const [branch, filePath] = branchAndFilePath;
+    
+    url.pathname = [
+      ...(relativePath ? [relativePath] : []),
+      'api/v4/projects',
+      projectID,
+      'repository/files',
+      encodeURIComponent(decodeURIComponent(filePath.join('/'))),
+      'raw',
+    ].join('/');
 
-    return resolvedUrl;
+    url.search = `?ref=${branch}`;
+
+    return url;
   } catch (e) {
     throw new Error(`Incorrect url: ${target}, ${e}`);
   }
@@ -175,18 +168,38 @@ export async function getProjectId(
   }
 }
 
+
+interface GitLabBranch {
+  name: string;
+  commit: {
+    id: string;
+    short_id: string;
+    title: string;
+    created_at: string;
+    parent_ids: string[];
+    message: string;
+    authored_date: string;
+    author_name: string;
+    author_email: string;
+    committed_date: string;
+    committer_name: string;
+    committer_email: string;
+  };
+  protected: boolean;
+  developers_can_push: boolean;
+  developers_can_merge: boolean;
+}
+
 export async function resolveGitLabPath(
   url: URL,
   {
     projectID,
     relativePath = '',
     token = null,
-    cacheTTL = CACHE_TTL,
   }: {
     projectID: number;
     relativePath?: string;
     token?: string | null;
-    cacheTTL?: number;
   },
 ) {
   if (!url || !(url instanceof URL)) {
@@ -229,20 +242,6 @@ export async function resolveGitLabPath(
   let matchingBranch = null;
 
   for (const branchToTry of sortedBranches) {
-    // Check cache first
-    const cacheKey = `${branchesUrl.toString()}_${token || ''}_${branchToTry}`;
-    const cachedData = branchCache.get(cacheKey);
-    let branch;
-
-    if (cachedData && Date.now() - cachedData.timestamp < cacheTTL) {
-      branch = cachedData.branch;
-      if (branch) {
-        matchingBranch = branch.name;
-        break;
-      }
-      continue;
-    }
-
     try {
       const headers = {
         Accept: 'application/json',
@@ -277,12 +276,6 @@ export async function resolveGitLabPath(
         (b: GitLabBranch) => b.name === branchToTry,
       );
 
-      // Update cache
-      branchCache.set(cacheKey, {
-        branch: exactMatch || null,
-        timestamp: Date.now(),
-      });
-
       if (exactMatch) {
         matchingBranch = exactMatch.name;
         break;
@@ -307,19 +300,5 @@ export async function resolveGitLabPath(
     throw new Error('No file path found after branch name');
   }
 
-  // Create a new URL instance to avoid modifying the input
-  const resultUrl = new URL(url.origin);
-
-  // Update the URL for the file content
-  resultUrl.pathname = [
-    ...(relativePath ? [relativePath] : []),
-    'api/v4/projects',
-    projectID,
-    'repository/files',
-    encodeURIComponent(decodeURIComponent(filePathSegments.join('/'))),
-    'raw',
-  ].join('/');
-
-  resultUrl.search = `?ref=${encodeURIComponent(matchingBranch)}`;
-  return resultUrl;
+  return [matchingBranch, filePathSegments]
 }
