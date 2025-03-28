@@ -37,6 +37,8 @@ import {
   getGitLabFileFetchUrl,
   getGitLabIntegrationRelativePath,
   getGitLabRequestOptions,
+  resolveGitLabPath,
+  getProjectId,
 } from '@backstage/integration';
 import parseGitUrl from 'git-url-parse';
 import { trimEnd, trimStart } from 'lodash';
@@ -129,20 +131,39 @@ export class GitlabUrlReader implements UrlReaderService {
     options?: UrlReaderServiceReadTreeOptions,
   ): Promise<UrlReaderServiceReadTreeResponse> {
     const { etag, signal, token } = options ?? {};
-    const { ref, full_name, filepath } = parseGitUrl(url);
-
-    let repoFullName = full_name;
-
+    const projectID = await getProjectId(url, this.integration.config);
     const relativePath = getGitLabIntegrationRelativePath(
       this.integration.config,
     );
+    let { ref, full_name, filepath } = { ref: '', full_name: '', filepath: '' };
+    if (url.startsWith('https://')) {
+      const [branch, pathSegments] = await resolveGitLabPath(new URL(url), {
+        projectID,
+        relativePath,
+        token: this.integration.config.token,
+      });
+      ref = branch;
+      filepath = pathSegments.join('/');
+      full_name = url
+        .split('/-/')[0]
+        .replace(/^\//, '')
+        .replace(this.integration.config.baseUrl, '');
+    } else {
+      ({ ref, full_name, filepath } = parseGitUrl(url));
+    }
+
+    // Remove the first / if it exists
+    let repoFullName = full_name.split('/').slice(1).join('/');
 
     // Considering self hosted gitlab with relative
     // assuming '/gitlab' is the relative path
     // from: /gitlab/repo/project
     // to: repo/project
     if (relativePath) {
-      const rectifiedRelativePath = `${trimStart(relativePath, '/')}/`;
+      const rectifiedRelativePath = `${trimStart(
+        `${this.integration.config.baseUrl}/${relativePath}`,
+        '/',
+      )}/`;
       repoFullName = full_name.replace(rectifiedRelativePath, '');
     }
 

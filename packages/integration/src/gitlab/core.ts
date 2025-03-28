@@ -85,19 +85,14 @@ export async function buildProjectUrl(
   try {
     const url = new URL(target);
 
-    // const branchAndFilePath = url.pathname
-    //   .split('/blob/')
-    //   .slice(1)
-    //   .join('/blob/');
-
     const relativePath = getGitLabIntegrationRelativePath(config);
-    const branchAndFilePath = await resolveGitLabPath(url, {
+
+    const [branch, filePath] = await resolveGitLabPath(url, {
       projectID: +projectID,
       relativePath,
       token: config.token,
-    })
-    const [branch, filePath] = branchAndFilePath;
-    
+    });
+
     url.pathname = [
       ...(relativePath ? [relativePath] : []),
       'api/v4/projects',
@@ -168,7 +163,6 @@ export async function getProjectId(
   }
 }
 
-
 interface GitLabBranch {
   name: string;
   commit: {
@@ -211,7 +205,12 @@ export async function resolveGitLabPath(
   }
 
   // Get everything after '/blob/'
-  const blobParts = url.pathname.split('/blob/');
+  let blobParts = url.pathname.split('/blob/');
+
+  if (blobParts.length > 2) {
+    blobParts = ['/blob/', blobParts.slice(1).join('/blob/')];
+  }
+
   if (blobParts.length !== 2) {
     throw new Error('Invalid GitLab URL format: missing /blob/ path segment');
   }
@@ -300,5 +299,5 @@ export async function resolveGitLabPath(
     throw new Error('No file path found after branch name');
   }
 
-  return [matchingBranch, filePathSegments]
+  return [matchingBranch, filePathSegments];
 }

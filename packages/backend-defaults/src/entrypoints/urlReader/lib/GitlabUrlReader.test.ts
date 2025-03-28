@@ -83,73 +83,22 @@ describe('GitlabUrlReader', () => {
         rest.get('*/api/v4/projects/:name', (_, res, ctx) =>
           res(ctx.status(200), ctx.json({ id: 12345 })),
         ),
-        rest.get('*/api/v4/projects/:id/repository/branches', (req, res, ctx) => {
+        rest.get('*/api/v4/projects/:id/repository/branches', (_, res, ctx) => {
           return res(
             ctx.status(200),
             ctx.json([
               {
                 name: 'feature/branch',
-                commit: {
-                  id: 'sha123abc',
-                  short_id: 'sha123',
-                  title: 'Test commit',
-                  created_at: '2024-01-01T00:00:00Z',
-                  parent_ids: ['sha456def'],
-                  message: 'Test commit message',
-                  authored_date: '2024-01-01T00:00:00Z',
-                  author_name: 'Test Author',
-                  author_email: 'test@example.com',
-                  committed_date: '2024-01-01T00:00:00Z',
-                  committer_name: 'Test Committer',
-                  committer_email: 'test@example.com',
-                },
-                protected: false,
-                developers_can_push: true,
-                developers_can_merge: true,
               },
               {
                 name: 'branch',
-                commit: {
-                  id: 'sha123abc',
-                  short_id: 'sha123',
-                  title: 'Test commit',
-                  created_at: '2024-01-01T00:00:00Z',
-                  parent_ids: ['sha456def'],
-                  message: 'Test commit message',
-                  authored_date: '2024-01-01T00:00:00Z',
-                  author_name: 'Test Author',
-                  author_email: 'test@example.com',
-                  committed_date: '2024-01-01T00:00:00Z',
-                  committer_name: 'Test Committer',
-                  committer_email: 'test@example.com',
-                },
-                protected: false,
-                developers_can_push: true,
-                developers_can_merge: true,
               },
               {
                 name: 'master',
-                commit: {
-                  id: 'sha123abc',
-                  short_id: 'sha123',
-                  title: 'Test commit',
-                  created_at: '2024-01-01T00:00:00Z',
-                  parent_ids: ['sha456def'],
-                  message: 'Test commit message',
-                  authored_date: '2024-01-01T00:00:00Z',
-                  author_name: 'Test Author',
-                  author_email: 'test@example.com',
-                  committed_date: '2024-01-01T00:00:00Z',
-                  committer_name: 'Test Committer',
-                  committer_email: 'test@example.com',
-                },
-                protected: false,
-                developers_can_push: true,
-                developers_can_merge: true,
               },
             ]),
           );
-      }),
+        }),
         rest.get('*', (req, res, ctx) =>
           res(
             ctx.status(200),
@@ -246,14 +195,6 @@ describe('GitlabUrlReader', () => {
       logger,
       treeResponseFactory,
     });
-
-    beforeEach( () => {
-      worker.use(
-        rest.get('*/api/v4/projects/12345/repository/branches', (_, res, ctx) =>
-          res(ctx.status(200), ctx.json([{ name: 'branch' }])),
-        ),
-      )
-    })
 
     it('should throw NotModified on HTTP 304 from etag', async () => {
       worker.use(

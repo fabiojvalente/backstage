@@ -21,9 +21,23 @@ import { getGitLabFileFetchUrl, getGitLabRequestOptions } from './core';
 
 const worker = setupServer();
 
+// Mock AbortSignal.timeout
+const originalAbortSignal = global.AbortSignal;
+global.AbortSignal = class extends originalAbortSignal {
+  static timeout(ms: number) {
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), ms);
+    return controller.signal;
+  }
+} as any;
+
 describe('gitlab core', () => {
   beforeAll(() => worker.listen({ onUnhandledRequest: 'error' }));
-  afterAll(() => worker.close());
+  afterAll(() => {
+    worker.close();
+    // Restore original AbortSignal
+    global.AbortSignal = originalAbortSignal;
+  });
   afterEach(() => worker.resetHandlers());
 
   beforeEach(() => {
@@ -33,6 +47,9 @@ describe('gitlab core', () => {
       ),
       rest.get('*/api/v4/projects/group%2Fsubgroup%2Fproject', (_, res, ctx) =>
         res(ctx.status(200), ctx.json({ id: 12345 })),
+      ),
+      rest.get('*/api/v4/projects/12345/repository/branches', (_, res, ctx) =>
+        res(ctx.status(200), ctx.json([{ name: 'branch' }])),
       ),
     );
   });
@@ -70,6 +87,13 @@ describe('gitlab core', () => {
       });
 
       it('supports folder named "blob"', async () => {
+        worker.use(
+          rest.get(
+            '*/api/v4/projects/12345/repository/branches',
+            (_, res, ctx) =>
+              res(ctx.status(200), ctx.json([{ name: 'branch' }])),
+          ),
+        );
         const target =
           'https://gitlab.com/group/project/-/blob/branch/blob/file.yaml';
         const fetchUrl =
@@ -176,6 +200,13 @@ describe('gitlab core', () => {
       });
 
       it('supports repo with branch named "blob"', async () => {
+        worker.use(
+          rest.get(
+            '*/api/v4/projects/12345/repository/branches',
+            (_, res, ctx) => res(ctx.status(200), ctx.json([{ name: 'blob' }])),
+          ),
+        );
+
         const target =
           'https://gitlab.com/group/project/blob/blob/folder/file.yaml';
         const fetchUrl =

@@ -24,6 +24,7 @@ export {
   getGitLabFileFetchUrl,
   getGitLabRequestOptions,
   resolveGitLabPath,
+  getProjectId,
 } from './core';
 export { GitLabIntegration, replaceGitLabUrlType } from './GitLabIntegration';
 export { DefaultGitlabCredentialsProvider } from './DefaultGitlabCredentialsProvider';
